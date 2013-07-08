@@ -68,6 +68,7 @@ static void on_read(uv_stream_t* stream, ssize_t nread, uv_buf_t buf) {
         }
     }
 
+    printf("connected.\n");
     write_data((uv_stream_t*) stream, nread, buf, on_write);
 }
 

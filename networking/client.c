@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <assert.h>
 #include "uv.h"
 
 
@@ -13,7 +14,9 @@ static void on_connect(uv_connect_t* req, int status);
 
 
 uv_loop_t* loop;
-uv_tcp_t socket;
+uv_stream_t* stream;
+uv_pipe_t stdin_pipe;
+
 
 typedef struct {
     uv_write_t req;
@@ -38,9 +41,13 @@ int main(void) {
 
     loop = uv_default_loop();
 
+    struct sockaddr_in dest = uv_ip4_addr("0.0.0.0", 7000);
+
+    uv_tcp_t socket;
     uv_tcp_init(loop, &socket);
 
-    struct sockaddr_in dest = uv_ip4_addr("0.0.0.0", 7000);
+    uv_pipe_init(loop, &stdin_pipe, 0);
+    uv_pipe_open(&stdin_pipe, 0);
 
     uv_connect_t connect;
     uv_tcp_connect(&connect, &socket, dest, on_connect);
@@ -49,25 +56,23 @@ int main(void) {
 }
 
 
-static void on_connect(uv_connect_t* req, int status) {
+static void on_connect(uv_connect_t* connection, int status) {
     assert(status == 0);
+    printf("connected.\n");
 
-    uv_read_start((uv_stream_t*)&socket, alloc_buffer, read_stdin);
+    stream = connection->handle;
+
+    uv_read_start((uv_stream_t*)&stdin_pipe, alloc_buffer, read_stdin);
 }
 
-void read_stdin(uv_stream_t *stream, ssize_t nread, uv_buf_t buf) {
+void read_stdin(uv_stream_t *inputstream, ssize_t nread, uv_buf_t buf) {
     if (nread == -1) {
         if (uv_last_error(loop).code == UV_EOF) {
             uv_close((uv_handle_t*)&socket, NULL);
         }
     }
-    else {
-        if (nread > 0) {
-            write_data((uv_stream_t*)&socket, nread, buf, on_socket_write);
-        }
-    }
-    if (buf.base)
-        free(buf.base);
+
+    write_data(stream, nread, buf, on_socket_write);
 }
 
 static void write_data(uv_stream_t *dest, size_t size, uv_buf_t buf, uv_write_cb callback) {
